@@ -111,13 +111,15 @@ int main(int argc,char **argv)
 
 //----------------------------------------- Allocazione della memoria --------------------------------------
 
-   double *A,*B, *C,*p1,*p2,*p;
+   double *A,*B, *C, *D, *p1,*p2;
    A = (double *) malloc(sizeof(double) * isize[0]*isize[1]*isize[2]);
-   C = (double *) malloc(sizeof(double) * isize[0]*isize[1]*isize[2]);
    B = (double *) malloc(sizeof(double) * fsize[0]*fsize[1]*fsize[2]*2);
+   C = (double *) malloc(sizeof(double) * isize[0]*isize[1]*isize[2]);
+   D = (double *) malloc(sizeof(double) * fsize[0]*fsize[1]*fsize[2]*2);
 
    if (rank == 0)
 	   printf("Memory allocated\n");
+
 
 //-------------------------------------------- Riempimento memoria ----------------------------------------
 
@@ -132,13 +134,8 @@ int main(int argc,char **argv)
        for(x=0;x < isize[0];x++) {
     	  val = sin(x)*cos(x)*z;
           *p1++ = val;
-          *p2++ = 0.0;
+          // *p2++ = 0.0;
        }
-
-   long int total_f_grid_size, total_i_grid_size,total_modes;
-   total_f_grid_size = fsize[0] * fsize[1] * fsize[2]*2;
-   total_i_grid_size = isize[0] * isize[1] * isize[2];
-   total_modes = nx * ny * nz;
 
    if (rank == 0) {
    	printf("Array ready\n");
@@ -149,18 +146,23 @@ int main(int argc,char **argv)
 //=============================================== END SETUP ==============================================
 
 //================================================== FFT =================================================
-//---------------------------------------------- Forward FFT ---------------------------------------------
+//---------------------------------------------- R2C #0 FFT ----------------------------------------------
 
-   double ftime, normtime, btime, factor;
+   double f0time, f1time, normtime, b0time, factor;
+   f0time = 0.0;
    unsigned char oper_1[]="fft", oper_2[]="tff";	// Design trasformations
-   ftime = 0.0;
+   long int total_f_grid_size, total_i_grid_size,total_modes;
+   total_f_grid_size = fsize[0] * fsize[1] * fsize[2]*2;
+   total_i_grid_size = isize[0] * isize[1] * isize[2];
+   total_modes = nx * ny * nz;
+
 
    MPI_Barrier(MPI_COMM_WORLD);
-   ftime = ftime - MPI_Wtime();
+   f0time = f0time - MPI_Wtime();
 
    Cp3dfft_ftran_r2c(A,B,oper_1);
 
-   ftime = ftime + MPI_Wtime();
+   f0time = f0time + MPI_Wtime();
 
 /*     if(rank == 0)
         printf("Result of forward transform\n");
@@ -181,24 +183,60 @@ int main(int argc,char **argv)
    if (rank == 0) {
       	printf("Operation on %dx%dx%d grid per %dx%dx%d arrays completed in %lgs"
       			", plus %lgs to normalize results\n",
-				isize[0], isize[1], isize[2], nx/isize[0], ny/isize[1], nz/isize[2] ,ftime, normtime);
+				isize[0], isize[1], isize[2], nx/isize[0], ny/isize[1], nz/isize[2] ,f0time, normtime);
       	printf("\nStarting FFT (C2R)...\n");
    }
 
 
+//---------------------------------------------- C2R #0 FFT ----------------------------------------------
+
    MPI_Barrier(MPI_COMM_WORLD);
-   btime = btime - MPI_Wtime();
+   b0time = b0time - MPI_Wtime();
 
    Cp3dfft_btran_c2r(B,C,oper_2);
 
-   btime = btime + MPI_Wtime();
+   b0time = b0time + MPI_Wtime();
+
+   MPI_Barrier(MPI_COMM_WORLD);
 
    if (rank == 0) {
 	   printf("Operation on %dx%dx%d grid per %dx%dx%d arrays completed in %lgs!\n",
-			   fsize[0], fsize[1], fsize[2], nx/fsize[0], ny/fsize[1], nz/fsize[2]/2, btime);
-	   printf("!!Always check which mode exploit the symmetry!!\n\n");
+			   fsize[0], fsize[1], fsize[2], nx/fsize[0], ny/fsize[1], nz/fsize[2]/2, b0time);
+	   printf("!!Always check which mode exploit the symmetry!!\n");
+	   printf("\nStarting FFT (R2C)...\n");
    }
 
+
+//---------------------------------------------- R2C #1 FFT ----------------------------------------------
+
+   f1time = 0.0;
+   f1time = f1time - MPI_Wtime();
+
+   Cp3dfft_ftran_r2c(C,D,oper_1);
+
+   f1time = f1time + MPI_Wtime();
+
+  /*     if(rank == 0)
+          printf("Result of forward transform\n");
+
+       print_all(B,total_f_grid_size,rank,total_modes);
+  */
+
+  // normalize
+     normtime = 0.0;
+     normtime = normtime - MPI_Wtime();
+
+     factor = 1.0/total_modes;
+     mult_array(D,total_f_grid_size,factor);
+
+     normtime = normtime + MPI_Wtime();
+
+
+     if (rank == 0) {
+        	printf("Operation on %dx%dx%d grid per %dx%dx%d arrays completed in %lgs"
+        			", plus %lgs to normalize results\n\n",
+  				isize[0], isize[1], isize[2], nx/isize[0], ny/isize[1], nz/isize[2] ,f1time, normtime);
+     }
   // Free work space
   Cp3dfft_clean();
 
@@ -207,18 +245,18 @@ int main(int argc,char **argv)
 
 //============================================ CHECK RESULTS ============================================
 
-  double cdiff,ccdiff, prec;
+  double cdiff,ccdiff, prec, *p_t1, *p_t2;
 
-  cdiff = 0.0; p2 = C;p1 = A;
-  for(z=0;z < isize[2];z++)
-    for(y=0;y < isize[1];y++)
-       for(x=0;x < isize[0];x++) {
-	 if(cdiff < fabs(*p2 - *p1)) {
-           cdiff = fabs(*p2 - *p1);
-	   /* 	   printf("x,y,z=%d %d %d,cdiff,p1,p2=%f %f %f\n",x,y,z,cdiff,*p1,*p2); */
+  cdiff = 0.0; p_t1 = D ;p_t2 = B;
+  for(z=0;z < fsize[2];z++)
+    for(y=0;y < fsize[1];y++)
+       for(x=0;x < fsize[0];x++) {
+	 if(cdiff < fabs(*p_t2 - *p_t1)) {
+         cdiff = fabs(*p_t2 - *p_t1);
+         printf("max difference until now is = %.20lf on rank = %d \n", cdiff, rank);
 	 }
-          p1++;
-          p2++;
+          p_t1++;
+          p_t2++;
         }
 
    MPI_Reduce(&cdiff,&ccdiff,1,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
@@ -228,9 +266,9 @@ int main(int argc,char **argv)
     prec = 1.0e-14;
 
     if(ccdiff > prec * total_modes*0.25)
-      printf("Results are incorrect\n");
+      printf("\nResults are incorrect\n");
     else
-      printf("Results are correct\n");
+      printf("\nResults are correct\n");
 
     printf("max diff =%g\n",ccdiff);
   }
@@ -238,8 +276,10 @@ int main(int argc,char **argv)
 
 
   MPI_Finalize();
+  return 0;
 
 }
+
 
 
 void mult_array(double *A,long int nar,double f)
