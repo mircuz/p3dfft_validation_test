@@ -137,11 +137,6 @@ int main(int argc,char **argv)
           // *p2++ = 0.0;
        }
 
-   if (rank == 0) {
-   	printf("Array ready\n");
-   	printf("\nStarting FFT (R2C)...\n");
-   }
-
 
 //=============================================== END SETUP ==============================================
 
@@ -150,11 +145,17 @@ int main(int argc,char **argv)
 
    double f0time, f1time, normtime, b0time, factor;
    f0time = 0.0;
-   unsigned char oper_1[]="fft", oper_2[]="tff";	// Design trasformations
+   unsigned char oper_1[]="fnf", oper_2[]="fnf";	// Design trasformations
    long int total_f_grid_size, total_i_grid_size,total_modes;
    total_f_grid_size = fsize[0] * fsize[1] * fsize[2]*2;
    total_i_grid_size = isize[0] * isize[1] * isize[2];
    total_modes = nx * ny * nz;
+
+   if (rank == 0) {
+      	printf("Array ready\n");
+      	printf("\nStarting FFT (R2C) ...\n"
+      			"Transformation kind:\t x,y,z = %s \n", oper_1);
+      }
 
 
    MPI_Barrier(MPI_COMM_WORLD);
@@ -185,6 +186,8 @@ int main(int argc,char **argv)
       			", plus %lgs to normalize results\n",
 				isize[0], isize[1], isize[2], nx/isize[0], ny/isize[1], nz/isize[2] ,f0time, normtime);
       	printf("\nStarting FFT (C2R)...\n");
+      	printf("\nStarting FFT (R2C) ...\n"
+      			"Transformation kind:\t z,y,x = %s \n", oper_2);
    }
 
 
@@ -204,6 +207,8 @@ int main(int argc,char **argv)
 			   fsize[0], fsize[1], fsize[2], nx/fsize[0], ny/fsize[1], nz/fsize[2]/2, b0time);
 	   printf("!!Always check which mode exploit the symmetry!!\n");
 	   printf("\nStarting FFT (R2C)...\n");
+	   printf("\nStarting FFT (R2C) ...\n"
+	         	"Transformation kind:\t x,y,z = %s \n", oper_1);
    }
 
 
