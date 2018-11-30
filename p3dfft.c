@@ -127,14 +127,13 @@ int main(int argc,char **argv)
    double val;
 
    p1 = A;
-   p2 = C;
+
 
    for(z=0;z < isize[2];z++)
      for(y=0;y < isize[1];y++)
        for(x=0;x < isize[0];x++) {
     	  val = sin(x)*cos(x)*z;
           *p1++ = val;
-          // *p2++ = 0.0;
        }
 
 
