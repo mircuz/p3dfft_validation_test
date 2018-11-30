@@ -123,19 +123,31 @@ int main(int argc,char **argv)
 
 //-------------------------------------------- Riempimento memoria ----------------------------------------
 
-   int i,j,k,x,y,z,nu;
-   double val;
+   int x,y,z;
+   double val_r, val_i;
 
-   p1 = A;
+   p1 = B;
 
 
    for(z=0;z < isize[2];z++)
      for(y=0;y < isize[1];y++)
        for(x=0;x < isize[0];x++) {
-    	  val = sin(x)*cos(x)*z;
-          *p1++ = val;
+
+    	   val_r = sin(x)*cos(x)*z;
+    	   *p1++ = val_r;
+    	   val_i = (x+y+z)+1;
+    	   *p1++ = val_i;
        }
 
+// Printf del puntatore
+   if (rank == 0) {
+	   p1 = B;
+   for(z=0;z < isize[2];z++)
+        for(y=0;y < isize[1];y++)
+          for(x=0;x < isize[0];x++) {
+        	       printf("R: %f \t I: %f \n", *++p1, *++p1);
+          }
+   }
 
 //=============================================== END SETUP ==============================================
 
