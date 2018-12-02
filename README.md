@@ -9,4 +9,4 @@ From C€R to D€C
 
 p3dfft do C2R and R2C fft.
 
-Test results is implemented through pointers into the B & D arrays.
+Test results check is implemented through pointers into the B & D arrays.
