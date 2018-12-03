@@ -99,14 +99,14 @@ int main(int argc,char **argv)
    int fstart[3],fsize[3],fend[3];
    Cp3dfft_get_dims( fstart, fend, fsize, 2);
 
-   if( rank ==0 ) {
-   	printf("\n ----------|Modes array per processor|----------  \n");
-   	printf("|\tx_in= %d \t x_out= %d \t\t|\n", isize[0], fsize[0]);     //--------check size!!
-   	printf("|\ty_in= %d \t y_out= %d \t\t|\n", isize[1], fsize[1]);
-   	printf("|\tz_in= %d \t z_out= %d \t\t|\n", isize[2], fsize[2]);
-   	printf(" -----------------------------------------------  \n\n");
+   	printf("\n ----------------|Modes on processor: %d|----------------  \n", rank);
+   	printf("|\tLocal array input: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+   			istart[0], istart[1], istart[2], iend[0], iend[1], iend[2] );
+   	printf("|\tLocal array output: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+   			fstart[0], fstart[1], fstart[2], fend[0], fend[1], fend[2]);
+   	printf(" -------------------------------------------------------  \n\n");
 
-   }
+   MPI_Barrier( MPI_COMM_WORLD);
 
 
 //------------------------------------- Allocazione della memoria LOCALE -----------------------------------
