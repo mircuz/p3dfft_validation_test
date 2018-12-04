@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <math.h>
 
+//============================================== START SCRIPT ================================================
+//============================================================================================================
+
 int main(int argc,char **argv)
 {
    void print_all(double *,long int,int,long int),mult_array(double *,long int,double);
@@ -99,14 +102,15 @@ int main(int argc,char **argv)
    int fstart[3],fsize[3],fend[3];
    Cp3dfft_get_dims( fstart, fend, fsize, 2);
 
-   if( rank ==0 ) {
-   	printf("\n ----------|Modes array per processor|----------  \n");
-   	printf("|\tx_in= %d \t x_out= %d \t\t|\n", isize[0], fsize[0]);
-   	printf("|\ty_in= %d \t y_out= %d \t\t|\n", isize[1], fsize[1]);
-   	printf("|\tz_in= %d \t z_out= %d \t\t|\n", isize[2], fsize[2]);
-   	printf(" -----------------------------------------------  \n\n");
+	printf("\n\t ----------------|Modes on processor: %d|------------------------  \n", rank);
+  	printf("\t|\tLocal array input: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+  			fstart[2], fstart[1], fstart[0], fend[2], fend[1], fend[0] );
+  	printf("\t|\tLocal array output: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+  			istart[0], istart[1], istart[2], iend[0], iend[1], iend[2]);
+	printf("\t|\tArray size: \t\t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+  			fsize[2], fsize[1], fsize[0], isize[0], isize[1], isize[2]);
+  	printf("\t ---------------------------------------------------------------  \n\n");
 
-   }
 
 
 //----------------------------------------- Allocazione della memoria --------------------------------------
@@ -123,7 +127,7 @@ int main(int argc,char **argv)
 
 //-------------------------------------------- Riempimento memoria ----------------------------------------
 
-   int i,j,k,x,y,z,nu;
+   int i,j,k,x,y,z;
    double val;
 
    p1 = A;
@@ -132,10 +136,16 @@ int main(int argc,char **argv)
    for(z=0;z < isize[2];z++)
      for(y=0;y < isize[1];y++)
        for(x=0;x < isize[0];x++) {
-    	  val = sin(x)*cos(x)*z;
+    	  // val = rand() % 100;		// random series
+    	   val = sin(x) * cos(x) * z;
           *p1++ = val;
        }
 
+/*/----------- Printf A------------------
+   for (int i = 0; i < isize[0]*isize[1]*isize[2]; i++){
+	   printf("R= %f \t rank = %d \n", A[i], rank);
+   }
+*/
 
 //=============================================== END SETUP ==============================================
 
@@ -164,11 +174,24 @@ int main(int argc,char **argv)
 
    f0time = f0time + MPI_Wtime();
 
-/*     if(rank == 0)
-        printf("Result of forward transform\n");
 
-     print_all(B,total_f_grid_size,rank,total_modes);
-*/
+//----------- Printf B------------------
+
+   print_all(B,total_f_grid_size,rank,total_modes);
+
+
+   if(rank == 0)
+	   printf("B array\n");
+   for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
+	   if (i %2 == 0){
+		   printf("R= %f \t ", B[i]);
+	   }
+	   else{
+		   printf("I= %f \t rank = %d \n", B[i], rank);
+	   }
+   }
+
+
 
 // normalize
    normtime = 0.0;
@@ -220,11 +243,27 @@ int main(int argc,char **argv)
 
    f1time = f1time + MPI_Wtime();
 
-  /*     if(rank == 0)
-          printf("Result of forward transform\n");
 
-       print_all(B,total_f_grid_size,rank,total_modes);
-  */
+
+   if(rank == 0)
+	   printf("Result of forward transform\n");
+
+//----------- Printf D------------------
+
+   print_all(D,total_f_grid_size,rank,total_modes);
+
+   if ( rank == 0)
+   printf("D array");
+   for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
+	   if (i %2 == 0){
+		   printf("R= %f \t ", D[i]);
+	   }
+	   else{
+		   printf("I= %f \t rank = %d \n", D[i], rank);
+	   }
+   }
+
+
 
   // normalize
      normtime = 0.0;
@@ -241,6 +280,8 @@ int main(int argc,char **argv)
         			", plus %lgs to normalize results\n\n",
   				isize[0], isize[1], isize[2], nx/isize[0], ny/isize[1], nz/isize[2] ,f1time, normtime);
      }
+
+
   // Free work space
   Cp3dfft_clean();
 
@@ -278,12 +319,14 @@ int main(int argc,char **argv)
   }
 
 
-
   MPI_Finalize();
   return 0;
 
 }
 
+
+//=============================================== END SCRIPT ===============================================
+//==========================================================================================================
 
 
 void mult_array(double *A,long int nar,double f)
