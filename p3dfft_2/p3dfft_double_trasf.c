@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <math.h>
 
+//============================================== START SCRIPT ================================================
+//============================================================================================================
+
 int main(int argc,char **argv)
 {
    void print_all(double *,long int,int,long int),mult_array(double *,long int,double);
@@ -99,64 +102,50 @@ int main(int argc,char **argv)
    int fstart[3],fsize[3],fend[3];
    Cp3dfft_get_dims( fstart, fend, fsize, 2);
 
-   	printf("\n ----------------|Modes on processor: %d|----------------  \n", rank);
-   	printf("|\tLocal array input: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
-   			istart[0], istart[1], istart[2], iend[0], iend[1], iend[2] );
-   	printf("|\tLocal array output: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
-   			fstart[0], fstart[1], fstart[2], fend[0], fend[1], fend[2]);
-   	printf(" -------------------------------------------------------  \n\n");
+	printf("\n\t ----------------|Modes on processor: %d|------------------------  \n", rank);
+  	printf("\t|\tLocal array input: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+  			fstart[2], fstart[1], fstart[0], fend[2], fend[1], fend[0] );
+  	printf("\t|\tLocal array output: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+  			istart[0], istart[1], istart[2], iend[0], iend[1], iend[2]);
+	printf("\t|\tArray size: \t\t (%d,%d,%d) -> (%d,%d,%d)\t|\n",
+  			fsize[2], fsize[1], fsize[0], isize[0], isize[1], isize[2]);
+  	printf("\t ---------------------------------------------------------------  \n\n");
 
-   MPI_Barrier( MPI_COMM_WORLD);
 
 
-//------------------------------------- Allocazione della memoria LOCALE -----------------------------------
+//----------------------------------------- Allocazione della memoria --------------------------------------
 
-   double *A,*B, *C, *D, *p1, *p2, *p3, *p4;
+   double *A,*B, *C, *D, *p1,*p2;
    A = (double *) malloc(sizeof(double) * isize[0]*isize[1]*isize[2]);
    B = (double *) malloc(sizeof(double) * fsize[0]*fsize[1]*fsize[2]*2);
    C = (double *) malloc(sizeof(double) * isize[0]*isize[1]*isize[2]);
    D = (double *) malloc(sizeof(double) * fsize[0]*fsize[1]*fsize[2]*2);
 
-   if (rank == 0) {
+   if (rank == 0)
 	   printf("Memory allocated\n");
-   }
 
 
 //-------------------------------------------- Riempimento memoria ----------------------------------------
 
-   int x,y,z;
-   double val_r, val_i;
+   int i,j,k,x,y,z;
+   double val;
 
    p1 = A;
-   p2 = B;
-   p3 = C;
-   p4 = D;
-
-  for(z=0;z < fsize[2];z++) {
-        for(y=0;y < fsize[1];y++) {
-          for(x=0;x < fsize[0];x++) {
-       	  val_r = 1;
-       	  val_i = x+y+z;
-          *p2++ = val_r;
-          *p2++ = val_i;
-    //      *p4++ = 0.0;
-    //      *p4++ = 0.0;
-
-          }
-        }
-  }
 
 
-//----------- Printf B------------------
-  for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
-	  if (i %2 == 0){
-		  printf("R= %f \t ", B[i]);
-	  }
-	  else{
-		  printf("I= %f \t rank = %d \n", B[i], rank);
-	  }
-  }
+   for(z=0;z < isize[2];z++)
+     for(y=0;y < isize[1];y++)
+       for(x=0;x < isize[0];x++) {
+    	  // val = rand() % 100;		// random series
+    	   val = sin(x) * cos(x) * z;
+          *p1++ = val;
+       }
 
+/*/----------- Printf A------------------
+   for (int i = 0; i < isize[0]*isize[1]*isize[2]; i++){
+	   printf("R= %f \t rank = %d \n", A[i], rank);
+   }
+*/
 
 //=============================================== END SETUP ==============================================
 
@@ -166,10 +155,52 @@ int main(int argc,char **argv)
    double f0time, f1time, normtime, b0time, factor;
    f0time = 0.0;
    unsigned char oper_1[]="fnf", oper_2[]="fnf";	// Design trasformations
-   long int total_f_grid_size, total_i_grid_size, total_modes;
+   long int total_f_grid_size, total_i_grid_size,total_modes;
    total_f_grid_size = fsize[0] * fsize[1] * fsize[2]*2;
    total_i_grid_size = isize[0] * isize[1] * isize[2];
    total_modes = nx * ny * nz;
+
+   if (rank == 0) {
+      	printf("Array ready\n");
+      	printf("\nStarting FFT (R2C) ...\n"
+      			"Transformation kind:\t x,y,z = %s \n", oper_1);
+      }
+
+
+   MPI_Barrier(MPI_COMM_WORLD);
+   f0time = f0time - MPI_Wtime();
+
+   Cp3dfft_ftran_r2c(A,B,oper_1);
+
+   f0time = f0time + MPI_Wtime();
+
+
+//----------- Printf B------------------
+
+   print_all(B,total_f_grid_size,rank,total_modes);
+
+
+   if(rank == 0)
+	   printf("B array\n");
+   for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
+	   if (i %2 == 0){
+		   printf("R= %f \t ", B[i]);
+	   }
+	   else{
+		   printf("I= %f \t rank = %d \n", B[i], rank);
+	   }
+   }
+
+
+
+// normalize
+   normtime = 0.0;
+   normtime = normtime - MPI_Wtime();
+
+   factor = 1.0/total_modes;
+   mult_array(B,total_f_grid_size,factor);
+
+   normtime = normtime + MPI_Wtime();
 
 
    if (rank == 0) {
@@ -193,26 +224,11 @@ int main(int argc,char **argv)
 
    MPI_Barrier(MPI_COMM_WORLD);
 
-   // normalize
-   normtime = 0.0;
-   normtime = normtime - MPI_Wtime();
-
-   factor = 1.0/total_modes;
-   mult_array(C,total_i_grid_size, factor);
-
-   normtime = normtime + MPI_Wtime();
-
-
-/*/----------- Printf C------------------
-   for (int i = 0; i < isize[0]*isize[1]*isize[2]; i++){
-	   printf("R= %f \t rank = %d \n", C[i], rank);
-   }
-*/
-
    if (rank == 0) {
 	   printf("Operation on %dx%dx%d grid per %dx%dx%d arrays completed in %lgs!\n",
 			   fsize[0], fsize[1], fsize[2], nx/fsize[0], ny/fsize[1], nz/fsize[2]/2, b0time);
 	   printf("!!Always check which mode exploit the symmetry!!\n");
+	   printf("\nStarting FFT (R2C)...\n");
 	   printf("\nStarting FFT (R2C) ...\n"
 	         	"Transformation kind:\t x,y,z = %s \n", oper_1);
    }
@@ -227,41 +243,66 @@ int main(int argc,char **argv)
 
    f1time = f1time + MPI_Wtime();
 
+
+
+   if(rank == 0)
+	   printf("Result of forward transform\n");
+
+//----------- Printf D------------------
+
+   print_all(D,total_f_grid_size,rank,total_modes);
+
+   if ( rank == 0)
+   printf("D array");
+   for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
+	   if (i %2 == 0){
+		   printf("R= %f \t ", D[i]);
+	   }
+	   else{
+		   printf("I= %f \t rank = %d \n", D[i], rank);
+	   }
+   }
+
+
+
+  // normalize
+     normtime = 0.0;
+     normtime = normtime - MPI_Wtime();
+
+     factor = 1.0/total_modes;
+     mult_array(D,total_f_grid_size,factor);
+
+     normtime = normtime + MPI_Wtime();
+
+
      if (rank == 0) {
         	printf("Operation on %dx%dx%d grid per %dx%dx%d arrays completed in %lgs"
         			", plus %lgs to normalize results\n\n",
   				isize[0], isize[1], isize[2], nx/isize[0], ny/isize[1], nz/isize[2] ,f1time, normtime);
      }
 
+
   // Free work space
   Cp3dfft_clean();
-
-
-//----------- Printf D------------------
-    for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
-  	  if (i %2 == 0){
-  		  printf("R= %f \t ", D[i]);
-  	  }
-  	  else{
-  		  printf("I= %f \t rank = %d \n", D[i], rank);
-  	  }
-    }
 
 
 //=============================================== END FFT ===============================================
 
 //============================================ CHECK RESULTS ============================================
 
-  double cdiff,ccdiff, prec;
+  double cdiff,ccdiff, prec, *p_t1, *p_t2;
 
-  cdiff = 0.0;
-
-  for (int i = 0; i < fsize[0]*fsize[1]*fsize[2]*2; i++){
-	 if(cdiff < fabs(D[i] - B[i])) {
-         cdiff = fabs(D[i] - B[i]);
+  cdiff = 0.0; p_t1 = D ;p_t2 = B;
+  for(z=0;z < fsize[2];z++)
+    for(y=0;y < fsize[1];y++)
+       for(x=0;x < fsize[0];x++) {
+	 if(cdiff < fabs(*p_t2 - *p_t1)) {
+         cdiff = fabs(*p_t2 - *p_t1);
          printf("max difference until now is = %.20lf on rank = %d \n", cdiff, rank);
 	 }
-  }
+          p_t1++;
+          p_t2++;
+        }
 
    MPI_Reduce(&cdiff,&ccdiff,1,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
 
@@ -277,14 +318,15 @@ int main(int argc,char **argv)
     printf("max diff =%g\n",ccdiff);
   }
 
-  free(A); free(B); free(C); free(D);
-
 
   MPI_Finalize();
   return 0;
 
 }
 
+
+//=============================================== END SCRIPT ===============================================
+//==========================================================================================================
 
 
 void mult_array(double *A,long int nar,double f)
