@@ -129,15 +129,18 @@ main(int argc,char **argv)
 
   //Set up GLOBAL dimensions of the INPUT & OUTPUT grids
 
-  int gdims1[3], proc_order[3], mem_order[3];
+  int gdims1[3], mem_order[] = { 0, 2, 1}, proc_order[] = { 0, 2, 1 };
   int p1,p2;
 
   gdims1[0] = nx;
   gdims1[1] = ny;
   gdims1[2] = nz;
+
+  /*
   for(i=0; i < 3;i++) {
     proc_order[i] = mem_order[i] = i; // The simplest case of sequential ordering
   }
+  */
 
   if (rank == 0) {
   	  printf("\t • Grid global dimensions defined\n");
@@ -161,7 +164,7 @@ main(int argc,char **argv)
 
   int pgrid2[3];
 
-  pgrid2[0] = 1;
+  pgrid2[0] = 1;		// TODO
   pgrid2[1] = p2;
   pgrid2[2] = p1;
 
@@ -177,7 +180,7 @@ main(int argc,char **argv)
   for(i=0; i < 3;i++) 
     gdims2[i] = gdims1[i];
 
-  int mem_order2[] = {2,1,0};
+  int mem_order2[] = {0,2,1};
 
   //Initialize initial and final grids, based on the above information
 
@@ -216,7 +219,7 @@ main(int argc,char **argv)
   Note: dimensions and global starts given by grid object are in physical coordinates,
   which need to be translated into storage coordinates: */
 
-  long int size1;
+  long int local_size_1;
   int ldims[3], glob_start[3];		/* Local dimensions vector of the first transformation and
   	  	  	  	  	  	  	  	  	  relative global starting coordinates vector of the local subgrid */
   for(i=0;i<3;i++) {
@@ -224,12 +227,12 @@ main(int argc,char **argv)
     ldims[mem_order[i]] = grid1->ldims[i];
   }
 
-  size1 = ldims[0]*ldims[1]*ldims[2];
+  local_size_1 = ldims[0]*ldims[1]*ldims[2];
 
 
   //Determine local array dimensions and allocate fourier space, complex-valued out array
 
-  long int size2;
+  long int local_size_2;
   int ldims2[3], glob_start2[3];
 
   for(i=0;i<3;i++) {
@@ -237,7 +240,7 @@ main(int argc,char **argv)
       ldims2[mem_order2[i]] = grid2->ldims[i];
   }
 
-  size2 = ldims2[0]*ldims2[1]*ldims2[2];
+  local_size_2 = ldims2[0]*ldims2[1]*ldims2[2];
 
 
   printf("\n\t --------------------|Modes on processor: %d|--------------------  \n"
@@ -245,12 +248,11 @@ main(int argc,char **argv)
 		"\t|\tGlobal array output: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n"
     	"\t|\tArray size: \t\t (%d,%d,%d) -> (%d,%d,%d)\t|\n"
 		"\t ---------------------------------------------------------------  \n"
-				, rank, glob_start[0], glob_start[1], glob_start[2],
-				glob_start[0] + ldims[0], glob_start[1] + ldims[1], glob_start[2]+ ldims[2],
-				glob_start2[0], glob_start2[1], glob_start2[2],
-				glob_start2[0] + ldims2[0], glob_start2[1] + ldims2[1], glob_start2[2]+ ldims2[2],
-				ldims[0], ldims[1], ldims[2], ldims2[0], ldims2[1], ldims2[2]);
-
+		  , rank, glob_start[0], glob_start[1], glob_start[2],
+		  glob_start[0] + ldims[0], glob_start[1] + ldims[1], glob_start[2]+ ldims[2],
+		  glob_start2[0], glob_start2[1], glob_start2[2],
+		  glob_start2[0] + ldims2[0], glob_start2[1] + ldims2[1], glob_start2[2]+ ldims2[2],
+		  ldims[0], ldims[1], ldims[2], ldims2[0], ldims2[1], ldims2[2]);
 
 
    if (rank == size -1) {
@@ -261,23 +263,35 @@ main(int argc,char **argv)
 //----------------------------------------- Memory allocation --------------------------------------
 /* 1D Array pointers used during the trasformation MUST BE LOCAL portion of the global 3D array.
  * The input & output array's pointer containing the 3D grid stored contiguously in memory,
- *  based on the local grid dimensions and storage order of grid1 and grid2.
+ * based on the local grid dimensions and storage order of grid1 and grid2.
  */
 
   double *IN, *OUT, *FIN;
 
-  IN =(double *) malloc(sizeof(double) *size1*2);
-  FIN=(double *) malloc(sizeof(double) *size1*2);
-  OUT=(double *) malloc(sizeof(double) *size2*2);
+  IN =(double *) malloc(sizeof(double) *local_size_1*2);
+  FIN=(double *) malloc(sizeof(double) *local_size_1*2);
+  OUT=(double *) malloc(sizeof(double) *local_size_2*2);
 
   if (rank == 0)
   	   printf("Memory allocated\n");
 
 
 //-------------------------------------------- Memory assignment ----------------------------------------
-//Initialize the IN array with a sine wave in 3D, based on the starting positions of my local grid within the global grid
+/*Initialize the IN array with a sine wave in 3D, based on the
+ *starting positions of my local grid within the global grid
+ */
 
-  init_wave(IN,gdims1,ldims,glob_start);
+  //init_wave(IN,gdims1,ldims,glob_start);
+
+  double *p_in;
+  p_in = IN;
+
+  for(y=0;y < ldims[1];y++)
+  	  for(z=0;z < ldims[2];z++)
+  		  for(x=0;x < ldims[0];x++) {
+  			  *p_in++ = rand() % 100;
+  			  *p_in++ = rand() % 100;
+  		  }
 
 
 //=============================================== END SETUP ==============================================
@@ -307,14 +321,15 @@ main(int argc,char **argv)
   	  printf("\nStarting Forward FFT ...\n");
   }
 
-/*
-  if(rank == 0)
+
+ /* if(rank == 0)
 	  printf("\nResults of forward transform: \n");
   print_res(OUT,gdims1,ldims2,glob_start2);
-*/
+  */
+
   double normtime = 0.0;
   normtime -= MPI_Wtime();
-  normalize(OUT,size2,gdims1);
+  normalize(OUT,local_size_2,gdims1);
   normtime += MPI_Wtime();
 
 
@@ -350,12 +365,17 @@ main(int argc,char **argv)
     printf("Max. diff. =%lg\n",diff);
   }
 
+
+  // Free pointers
+
   free(IN); free(OUT); free(FIN);
+
 
   // Clean up grid structures
 
   p3dfft_free_grid(grid1);
   p3dfft_free_grid(grid2);
+
 
   // Clean up all P3DFFT++ data
 
@@ -376,8 +396,8 @@ void normalize(double *A,long int size,int *gdims1)
   
   for(i=0;i<size*2;i++)
     A[i] = A[i] * f;
-
 }
+
 
 void init_wave(double *IN,int *gdims1,int *ldims,int *gstart)
 {
@@ -409,12 +429,12 @@ void init_wave(double *IN,int *gdims1,int *ldims,int *gstart)
    free(sinx); free(siny); free(sinz);
 }
 
+
 void print_res(double *A,int *gdims1,int *ldims,int *gstart)
 {
   int x,y,z;
   double *p;
   double total_modes;
-  int imo[3],i,j;
   
   total_modes = gdims1[0]*gdims1[1];
   total_modes *= gdims1[2];
@@ -432,23 +452,21 @@ double check_res(double *A,double *B,int *ldims)
 {
   int x,y,z;
   double *p1,*p2,d,mydiff;
-  int imo[3],i,j;
   p1 = A;
   p2 = B;
   
-
   mydiff = 0.;
-  for(z=0;z < ldims[2];z++)
-    for(y=0;y < ldims[1];y++)
-      for(x=0;x < ldims[0];x++) {
-	d = (*p1-*p2)*(*p1-*p2);
-	p1++; p2++;
-	d += (*p1-*p2)*(*p1-*p2);
-	if(d > mydiff)
-	  mydiff = d;
-	p1++;
-	p2++;
-      }
+  for(y=0;y < ldims[1];y++)
+	  for(z=0;z < ldims[2];z++)
+		  for(x=0;x < ldims[0];x++) {
+			  d = (*p1-*p2)*(*p1-*p2);
+			  p1++; p2++;
+			  d += (*p1-*p2)*(*p1-*p2);
+			  if(d > mydiff)
+				  mydiff = d;
+			  p1++;
+			  p2++;
+		  }
   return(sqrt(mydiff));
 }
 
