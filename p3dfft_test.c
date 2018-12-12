@@ -1,27 +1,33 @@
 /*
-This program exemplifies the use of 1D transforms in P3DFFT++. 1D transforms are performed on 3D arrays, in the dimension specified as an argument. This could be an isolated 1D transform or a stage in a multidimensional transform. This function can do local transposition, i.e. arbitrary input and output memory ordering. However it does not do an inter-processor transpose (see test_transMPI for that). 
-!
-! This program initializes a 3D array with a 3D sine wave, then
-! performs forward real-to-complex transform, backward comples-to-real 
-! transform, and checks that
-! the results are correct, namely the same as in the start except
-! for a normalization factor. It can be used both as a correctness
-! test and for timing the library functions.
-!
-! The program expects 'stdin' file in the working directory, with
-! a single line of numbers : Nx,Ny,Nz,dim,Nrep,MOIN(1)-(3),MOOUT(1)-(3). 
-! Here Nx,Ny,Nz are 3D grid dimensions, dim is the dimension of 1D transform 
-! (valid values are 0 through 2, and the logical dimension si specified, i.e. actual storage dimension may be different as specified by MOIN mapping), Nrep is the number of repititions. 
-! MOIN are 3 values for the memory order of the input grid, valid values of each is 0 - 2, not repeating. Similarly, MOOUT is the memory order of the output grid. 
-! Optionally a file named 'dims' can also be provided to guide in the choice
-! of processor geometry in case of 2D decomposition. It should contain
-! two numbers in a line, with their product equal to the total number
-! of tasks. Otherwise processor grid geometry is chosen automatically.
-! For better performance, experiment with this setting, varying
-! iproc and jproc. In many cases, minimizing iproc gives best results.
-! Setting it to 1 corresponds to one-dimensional decomposition.
-!
-! If you have questions please contact Dmitry Pekurovsky, dmitry@sdsc.edu
+Validation test for a 2D FFT using p3dfft++.
+The script is derived from the original 1D FFT example written in C.
+
+This script does a 2D slab decomposition along y direction and perform an FFT on a
+complex random dataset.
+
+Setup and FFTs have timers to show how many time is spent to perform such actions.
+Numbers of modes is selected during the declarations of the variables at top of
+the program.
+
+## How it works
+Firstly the program generates a complex random dataset.
+Once this is done the script does a 1D FFT along Z, followed by 1D FFT on X.
+Everything is moved on an array called CONV where it is possible to do operations.
+After those operations the script perform a 1D FFT along X and later along Z.
+
+The results check is performed through pointers in the first and last array.
+
+Since the code use MPI_Scatter to spread data among the processors, the number
+of ny modes should be divisible by the number of processors.
+
+Feel free to modify everything, and in case you find a better solution to spread
+the data across processors ( without the actual limitation of ny%size != 0 ) please
+contact me at: 	mirco.meazzo@mail.polimi.it
+
+
+
+Author: Mirco Meazzo
+
 */
 
 #include "p3dfft.h"
@@ -48,7 +54,7 @@ main(int argc,char **argv)
   long int sizez,sizex;
   double *INx, *INz, *CONV, *OUTz, *FINz, *OUTx;
   Grid *grid1x,*grid2x,*grid1z,*grid2z;
-  int glob_start_z[3];
+  int glob_start_z[3], glob_start_x[3];
   int type_ids1,type_ids2;
   double mydiff, diff = 0.0;
   int pdims[2], dim, dim2, mydims[3];
@@ -66,12 +72,20 @@ main(int argc,char **argv)
 
   //Header
    if(rank == 0) {
-	   printf("\n\n[=======================================================================]\n"
-			   "[========================P3DFFT Validation test=========================]\n"
-			   "[=======================================================================]\n\n");
+	   printf("\n\n[=========================================================================]\n"
+			   "[==========================P3DFFT Validation test=========================]\n"
+			   "[=========================================================================]\n\n");
 	   printf("Running on %d cores\n",size);
-	   printf("1D FFT in Double precision\n(%d %d %d) grid\n\n",nx,ny,nz);
+	   printf("2D FFT in Double precision\n(%d %d %d) grid\n\n",nx,ny,nz);
    }
+
+   if (rank == 0)
+	   if ( ny % size != 0 || size > ny ) {
+		   printf("!!! BE CAREFULL THE NUMBER OF ny SHOULD BE DIVISIBLE BY NUMBER OF TASKS !!!\n\n"
+				   "Aborting...\n\n\n\n");
+		   return 1;
+	   }
+
 
    // Broadcast input parameters
    MPI_Bcast(&nx,1,MPI_INT,0,p3dfft_comm);
@@ -103,7 +117,7 @@ main(int argc,char **argv)
    }
 
    if(rank == 0)
-      printf("Using processor grid %d x %d\n",pdims[0],pdims[1]);
+      printf("Using processor grid %d x %d\n\n",pdims[0],pdims[1]);
 
   //---------------------------------------------- P3DFFT Init -------------------------------------------
 
@@ -131,7 +145,7 @@ main(int argc,char **argv)
   pgrid1[2] = 1;
 
   if (rank == 0)
-      printf("Task per direction (%d,%d,%d)\n", pgrid1[0],pgrid1[1],pgrid1[2]);
+      printf("Task per direction (%d,%d,%d)\n\n", pgrid1[0],pgrid1[1],pgrid1[2]);
 
   //Initialize initial and final grids, based on the above information
   grid1z = p3dfft_init_grid(gdims,pgrid1,proc_order,mem_order,p3dfft_comm);
@@ -147,7 +161,7 @@ main(int argc,char **argv)
   //Determine local z-grid dimensions, so the BEFORE & AFTER transform array dimensions.
   ldimsz = grid1z->ldims;
   sizez = ldimsz[0]*ldimsz[1]*ldimsz[2]*2;
-  printf("ldimsz: %d,%d,%d\n", ldimsz[0], ldimsz[1], ldimsz[2]);
+  printf("Local dimensions on rank %d: %d,%d,%d\n", rank, ldimsz[0], ldimsz[1], ldimsz[2]);
 
   for(i=0;i<3;i++)
     mydims[mem_order[i]] = ldimsz[i];
@@ -181,38 +195,39 @@ main(int argc,char **argv)
   //Compute the starting indexes for each processor
   for(i=0;i<3;i++) {
 	  glob_start_z[i] = grid1z->glob_start[i];
+	  glob_start_x[i] = grid1x->glob_start[i];
   }
-  printf("Global starting indexes (%d,%d,%d) on rank: %d \n", glob_start_z[0], glob_start_z[1], glob_start_z[2],rank);
 
-  //RAND input
-  double *V, *p_v, *p_in;
-  V = (double*) malloc( gdims[1]*gdims[2]*gdims[0]*2* sizeof(double));
-  p_in = INz; 	p_v = V;
+  printf("\n\t --------------------|Modes on processor: %d|--------------------  \n"
+      	"\t|\tGlobal z-array: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n"
+  		"\t ---------------------------------------------------------------  \n"
+  		  , rank, glob_start_z[0], glob_start_z[1], glob_start_z[2],
+  		  glob_start_z[0] + ldimsz[0], glob_start_z[1] + ldimsz[1], glob_start_z[2]+ ldimsz[2]);
+
+  //Generate Input
+  double *p_in;
+  p_in = INz;
   j = 0;
+  double *V;
+  V = (double*) malloc( gdims[1]*gdims[2]*gdims[0]*2* sizeof(double));
+
   for ( i = 0; i < gdims[1]*gdims[2]*gdims[0]*2; i++ ){
-	  V[i] = j++;
+	  //V[i] = j++;
+	  V[i] = rand() % 10;
   }
 
-  for(y=0;y < ldimsz[1];y++)
-	  for(z=0;z < ldimsz[2];z++)
-		  for(x=0;x < ldimsz[0];x++) {
-			  *p_in++ = rand() % 100;
-			  *p_in++ = rand() % 100;
-		  }
-  //Wave input
-  //init_wave(INz,gdims,ldimsz,glob_start_z);
+  //Send chunks of array V to all processors
+  MPI_Scatter( V, sizez, MPI_DOUBLE, INz, sizez,  MPI_DOUBLE, 0, p3dfft_comm);
 
-  MPI_Barrier(p3dfft_comm);
 
-/*  //////////////////////////////////////////////////////////////
-  // TODO Entries check
-  if (rank == 0)
-	  printf("INPUT DATA: \n");
-  print_res(INz,mydims,glob_start_z,mem_order,mydims[2]);
-
+  //Print Entries (Use it only in case of extreme needing!)
+/*  if (rank == 0)														// This portion of code is useful to check whether
+	  printf("DISTRIBUTED DATA: \n");									// or not the array filling works properly
+  print_res(INz,mydims,glob_start_z,mem_order,mydims[2]);				// To access this portion remove the aborting procedure
+																		// after the header.
 
   double *ptr, A, B;
-  ptr = V;
+  ptr = INz;
   for ( y = 0; y < ldimsz[1]; y++)
 	  for ( x = 0; x < ldimsz[0]; x++)
 		  for ( z = 0; z < ldimsz[2]; z++){
@@ -222,31 +237,35 @@ main(int argc,char **argv)
 			  ptr++;
 			  printf("R: %f \t I: %f \n", A, B);
 		  }
-//////////////////////////////////////////////////////////////
 */
 
   //---------------------------------------------- FFT Execution -------------------------------------------
-
+  MPI_Barrier(p3dfft_comm);
   double timer_fft = 0.0;
   timer_fft -= MPI_Wtime();
 
   //Backward z-transform (z->x grid)
   p3dfft_exec_1Dtrans_double(trans_1,INz,INx);
   normalize(INx,(long int) ldimsx[0]*ldimsx[1]*ldimsx[2],1.0/((double) mydims[mem_order2[2]]));
+  MPI_Barrier(p3dfft_comm);
 
   //Backward x-transform (x->x grid)
   p3dfft_exec_1Dtrans_double(trans_2,INx,CONV);
   normalize(CONV,(long int) ldimsx[0]*ldimsx[1]*ldimsx[2],1.0/((double) mydims[mem_order[0]]));
+  MPI_Barrier(p3dfft_comm);
 
   //Forward x-transform (x->x grid)
   p3dfft_exec_1Dtrans_double(trans_3,CONV,OUTx);
+  MPI_Barrier(p3dfft_comm);
 
   //Forward z-transform (x->z grid)
   p3dfft_exec_1Dtrans_double(trans_4,OUTx,OUTz);
+  MPI_Barrier(p3dfft_comm);
 
   timer_fft += MPI_Wtime();
 
-/*  if (rank == 0)
+  //Print Outputs (Use it only in case of extreme needing!)
+/* if (rank == 0)
             printf("OUTPUT DATA: \n");
           print_res(OUTz,mydims,glob_start_z,mem_order,mydims[2]);
 */
@@ -256,11 +275,11 @@ main(int argc,char **argv)
   diff = 0.;
   MPI_Reduce(&mydiff,&diff,1,MPI_DOUBLE,MPI_MAX,0,p3dfft_comm);
   if(rank == 0){
-    printf("Max. diff. =%lg\n",diff);
-    printf("Time spent to setup: %f\nTime spent to do FFT: %f\n\nTotal time: %f\n", timer_setup, timer_fft, timer_fft+timer_setup);
+    printf("\nMax. diff. =%lg\n",diff);
+    printf("Time spent to setup: %f\nTime spent to do FFT: %f\n\nTotal time: %f\n\n\n", timer_setup, timer_fft, timer_fft+timer_setup);
   }
 
-  //Release memory and clean up P3DFFT++ grids and data
+  //-------------------------- Release memory and clean up P3DFFT++ grids and data ------------------------
   free(INz); free(OUTz); free(INx); free(CONV); free(OUTx); free(V);
   p3dfft_free_grid(grid1x); p3dfft_free_grid(grid2x); p3dfft_free_grid(grid1z); p3dfft_free_grid(grid2z);
   p3dfft_cleanup();
@@ -269,7 +288,7 @@ main(int argc,char **argv)
 }
 
 
-//------------------------------------------------ Functions ------------------------------------------------
+//=============================================== Functions ===============================================
 void normalize(double *A,long int size,double f)
 {
   long int i;
@@ -320,35 +339,3 @@ double check_res(double *A,double *B,int *mydims)
       }
   return(mydiff);
 }
-
-
-void init_wave(double *IN,int *gdims1,int *ldims,int *gstart)
-{
-  double *sinx,*siny,*sinz,sinyz,*p;
-  int x,y,z;
-  double twopi = atan(1.0)*8.0;
-
-  sinx = (double *) malloc(sizeof(double)*gdims1[0]);
-  siny = (double *) malloc(sizeof(double)*gdims1[1]);
-  sinz = (double *) malloc(sizeof(double)*gdims1[2]);
-
-   for(z=0;z < ldims[2];z++)
-     sinz[z] = sin((z+gstart[2])*twopi/gdims1[2]);
-   for(y=0;y < ldims[1];y++)
-     siny[y] = sin((y+gstart[1])*twopi/gdims1[1]);
-   for(x=0;x < ldims[0];x++)
-     sinx[x] = sin((x+gstart[0])*twopi/gdims1[0]);
-
-   p = IN;
-   for(z=0;z < ldims[2];z++)
-     for(y=0;y < ldims[1];y++) {
-       sinyz = siny[y]*sinz[z];
-       for(x=0;x < ldims[0];x++) {
-          *p++ =sinx[x]*sinyz;
-          *p++ =0.0;
-       }
-     }
-
-   free(sinx); free(siny); free(sinz);
-}
-
