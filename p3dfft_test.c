@@ -138,7 +138,7 @@ main(int argc,char **argv)
     proc_order[i] = i;
 
   // Define the processor grid
-  dim = 2;										// Transform direction
+  dim = 2;										// Transform direction z
   pgrid1[0] = pdims[0];
   pgrid1[1] = pdims[1];
   pgrid1[2] = 1;
@@ -170,6 +170,7 @@ main(int argc,char **argv)
   OUTz= (double *) malloc(sizeof(double) *sizez);
   FINz=(double *) malloc(sizeof(double) *sizez);
 
+  dim2 = 0;										// Transform direction x
   //Planning backward x-trasformation
   trans_2 = p3dfft_plan_1Dtrans(grid1x,grid2x,type_ids1,dim2,0);
   //Planning forward x-trasformation
@@ -198,7 +199,7 @@ main(int argc,char **argv)
   }
 
   printf("\n\t --------------------|Modes on processor: %d|--------------------  \n"
-      	"\t|\tGlobal z-array: \t (%d,%d,%d) -> (%d,%d,%d)\t|\n"
+      	"\t|\tLocal array: \t (%d,%d,%d) -> (%d,%d,%d)\t\t|\n"
   		"\t ---------------------------------------------------------------  \n"
   		  , rank, glob_start_z[0], glob_start_z[1], glob_start_z[2],
   		  glob_start_z[0] + ldimsz[0], glob_start_z[1] + ldimsz[1], glob_start_z[2]+ ldimsz[2]);
