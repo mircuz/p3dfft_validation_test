@@ -28,85 +28,74 @@ This program exemplifies the use of 1D transforms in P3DFFT++. 1D transforms are
 #include <math.h>
 #include <stdio.h>
 
+void init_wave(double *,int[3],int *,int[3]);
 void print_res(double *A,int *mydims,int *gstart, int *mo, int N);
 void normalize(double *,long int,double);
 double check_res(double *A,double *B,int *mydims);
 
 main(int argc,char **argv)
 {
-  int Nrep = 1;
   int rank,size;
-  int gdims[3],gdims2[3];
-  int pgrid1[3],pgrid2[3];
+  int gdims[3];
+  int pgrid1[3];
   int proc_order[3];
   int nx,ny,nz;
-  nx = ny = nz = 128;
-  int mem_order[] = { 1, 2, 0};
+  nx = ny = nz = 3;
+  int mem_order[]  = { 1, 2, 0};
   int mem_order2[] = { 0, 2, 1};
-  int i,j,k,x,y,z,p1,p2;
-  double Nglob;
-  int imo1[3];
+  int i,j,k,x,y,z;
   int *ldimsz,*ldimsx;
   long int sizez,sizex;
-  double *INx,*INz,*CONV,*OUTz, *FINz, *OUTx;
+  double *INx, *INz, *CONV, *OUTz, *FINz, *OUTx;
   Grid *grid1x,*grid2x,*grid1z,*grid2z;
-  int *glob_start,*glob_start2;
-
+  int glob_start_z[3];
   int type_ids1,type_ids2;
-  Type3D type_rcc,type_ccr;
-  double t=0.;
-  double *FIN;
-  double mydiff;
-  double diff = 0.0;
-  double gtavg=0.;
-  double gtmin=INFINITY;
-  double gtmax = 0.;
-  int pdims[2],n,dim, dim2,cnt,cnt2,ar_dim,ar_dim2,mydims[3],mydims2[3];
-  Plan3D trans_1,trans_2,trans_3,trans_4;
+  double mydiff, diff = 0.0;
+  int pdims[2], dim, dim2, mydims[3];
+  Plan3D trans_1, trans_2, trans_3, trans_4;
   FILE *fp;
 
   MPI_Init(&argc,&argv);
   MPI_Comm_size(MPI_COMM_WORLD,&size);
   MPI_Comm_rank(MPI_COMM_WORLD,&rank);
 
-  // Read input parameters
-
+  //Header
    if(rank == 0) {
-     printf("P3DFFT++ test1. Running on %d cores\n",size);
-     printf("D FFT in Double precision\n (%d %d %d) grid\n\n",nx,ny,nz);
+	   printf("\n\n[=======================================================================]\n"
+			   "[========================P3DFFT Validation test=========================]\n"
+			   "[=======================================================================]\n\n");
+	   printf("Running on %d cores\n",size);
+	   printf("1D FFT in Double precision\n(%d %d %d) grid\n\n",nx,ny,nz);
    }
 
    // Broadcast input parameters
-
    MPI_Bcast(&nx,1,MPI_INT,0,MPI_COMM_WORLD);
    MPI_Bcast(&ny,1,MPI_INT,0,MPI_COMM_WORLD);
    MPI_Bcast(&nz,1,MPI_INT,0,MPI_COMM_WORLD);
-
    MPI_Bcast(&dim,1,MPI_INT,0,MPI_COMM_WORLD);
    MPI_Bcast(&mem_order,3,MPI_INT,0,MPI_COMM_WORLD);
    MPI_Bcast(&mem_order2,3,MPI_INT,0,MPI_COMM_WORLD);
 
   // Establish 2D processor grid decomposition, either by readin from file 'dims' or by an MPI default
-
-     fp = fopen("dims","r");
-     if(fp != NULL) {
-       if(rank == 0)
-         printf("Reading proc. grid from file dims\n");
-       fscanf(fp,"%d %d\n",pdims,pdims+1);
+   fp = fopen("dims","r");
+   if(fp != NULL) {
+	   if(rank == 0)
+		   printf("Reading proc. grid from file dims\n");
+	   fscanf(fp,"%d %d\n",pdims,pdims+1);
        fclose(fp);
        if(pdims[0]*pdims[1] != size)
           pdims[1] = size / pdims[0];
-     }
-     else {
-       if(rank == 0)
-          printf("Creating proc. grid with mpi_dims_create\n");
-       pdims[0]=pdims[1]=0;
+   }
+   else {
+	   if(rank == 0)
+		   printf("Creating proc. grid with mpi_dims_create\n");
+	   pdims[0]=pdims[1]=0;
        MPI_Dims_create(size,2,pdims);
        if(pdims[0] > pdims[1]) {
           pdims[0] = pdims[1];
           pdims[1] = size/pdims[0];
        }
-     }
+   }
 
    if(rank == 0)
       printf("Using processor grid %d x %d\n",pdims[0],pdims[1]);
@@ -127,195 +116,118 @@ main(int argc,char **argv)
   for(i=0; i < 3;i++) 
     proc_order[i] = i;
 
-  p1 = pdims[0];
-  p2 = pdims[1];
-
-  // Define the initial processor grid
-  dim = 2;	// Transform direction
-  cnt=0;
-  for(i=0;i<3;i++)
-    if(i == dim)
-      pgrid1[i] = 1;
-    else
-      pgrid1[i] = pdims[cnt++];
+  // Define the processor grid
+  dim = 2;										// Transform direction
+  pgrid1[0] = pdims[0];
+  pgrid1[1] = pdims[1];
+  pgrid1[2] = 1;
 
   if (rank == 0)
-      printf("%d\n%d\n%d\n", pgrid1[0],pgrid1[1],pgrid1[2]);
-
-  // Set up the final global grid dimensions (these will be different from the original dimensions in one dimension since we are doing real-to-complex transform)
-
-  for(i=0; i < 3;i++) {
-    if(i == dim) {
-      ar_dim = mem_order[i];
-    }
-  }
-
-
-
-
-  dim2 = 0;
-      cnt2=0;
-      for(i=0;i<3;i++)
-        if(i == dim2)
-          pgrid2[i] = 1;
-        else
-          pgrid2[i] = pdims[cnt2++];
-
-
-
-
-      // Set up the final global grid dimensions (these will be different from the original dimensions in one dimension since we are doing real-to-complex transform)
-
-      for(i=0; i < 3;i++) {
-        if(i == dim2) {
-          ar_dim2 = mem_order2[i];
-        }
-      }
-
-
-
+      printf("Task per direction (%d,%d,%d)\n", pgrid1[0],pgrid1[1],pgrid1[2]);
 
   //Initialize initial and final grids, based on the above information
-
   grid1z = p3dfft_init_grid(gdims,pgrid1,proc_order,mem_order,MPI_COMM_WORLD);
-
   grid2z = p3dfft_init_grid(gdims,pgrid1,proc_order,mem_order,MPI_COMM_WORLD);
-
   grid1x = p3dfft_init_grid(gdims,pgrid1,proc_order,mem_order2,MPI_COMM_WORLD);
-
   grid2x = p3dfft_init_grid(gdims,pgrid1,proc_order,mem_order2,MPI_COMM_WORLD);
 
-  //Set up the forward transform, based on the predefined 3D transform type and grid1 and grid2. This is the planning stage, needed once as initialization.
-
+  //Planning backward z-trasformation
   trans_1 = p3dfft_plan_1Dtrans(grid1z,grid1x,type_ids1,dim,0);
-
-  //Now set up the backward transform
-
+  //Planning forward z-trasformation
   trans_4 = p3dfft_plan_1Dtrans(grid2x,grid2z,type_ids2,dim,0);
 
-  //Determine local array dimensions. 
-
+  //Determine local z-grid dimensions, so the BEFORE & AFTER transform array dimensions.
   ldimsz = grid1z->ldims;
   sizez = ldimsz[0]*ldimsz[1]*ldimsz[2]*2;
+  printf("ldimsz: %d,%d,%d\n", ldimsz[0], ldimsz[1], ldimsz[2]);
 
   for(i=0;i<3;i++)
     mydims[mem_order[i]] = ldimsz[i];
 
-  //Now allocate initial and final arrays in physical space (real-valued)
+  //Allocate input and output z-arrays
   INz=(double *) malloc(sizeof(double)*sizez);
   OUTz= (double *) malloc(sizeof(double) *sizez);
   FINz=(double *) malloc(sizeof(double) *sizez);
 
+  //Planning backward x-trasformation
+  trans_2 = p3dfft_plan_1Dtrans(grid1x,grid2x,type_ids1,dim2,0);
+  //Planning forward x-trasformation
+  trans_3 = p3dfft_plan_1Dtrans(grid2x,grid2x,type_ids2,dim2,0);
+
+  //Determine local x-grid dimensions, so the INNER transformations arrays dimensions.
+  ldimsx = grid1x->ldims;
+  sizex = ldimsx[0]*ldimsx[1]*ldimsx[2]*2;
+
+  for(i=0;i<3;i++)
+	  mydims[mem_order2[i]] = ldimsx[i];
+
+  //Allocate input and output x-arrays
+  INx=(double *) malloc(sizeof(double)*sizex);
+  CONV= (double *) malloc(sizeof(double) *sizex);
+  OUTx =(double *) malloc(sizeof(double) *sizex);
 
 
-  if (rank == 0)
-        printf("%d\n%d\n%d\n", pgrid2[0],pgrid2[1],pgrid2[2]);
+  //-------------------------------------------- Memory filling ----------------------------------------
+  //Compute the starting indexes for each processor
+  for(i=0;i<3;i++) {
+	  glob_start_z[i] = grid1z->glob_start[i];
+  }
+  printf("Global starting indexes (%d,%d,%d) on rank: %d \n", glob_start_z[0], glob_start_z[1], glob_start_z[2],rank);
 
-
-
-      //Set up the forward transform, based on the predefined 3D transform type and grid1 and grid2. This is the planning stage, needed once as initialization.
-
-      trans_2 = p3dfft_plan_1Dtrans(grid1x,grid2x,type_ids1,dim2,0);
-
-      //Now set up the backward transform
-
-      trans_3 = p3dfft_plan_1Dtrans(grid2x,grid2x,type_ids2,dim2,0);
-
-      //Determine local array dimensions.
-
-      ldimsx = grid1x->ldims;
-      sizex = ldimsx[0]*ldimsx[1]*ldimsx[2]*2;
-
-      for(i=0;i<3;i++)
-        mydims[mem_order2[i]] = ldimsx[i];
-
-      //Now allocate initial and final arrays in physical space (real-valued)
-      INx=(double *) malloc(sizeof(double)*sizex);
-      CONV= (double *) malloc(sizeof(double) *sizex);
-      OUTx =(double *) malloc(sizeof(double) *sizex);
-
-
-
-
-
-
-
-  //-------------------------------------------- Memory assignment ----------------------------------------
-
+  //RAND input
   double *p_in;
-    p_in = INz;
+  p_in = INz;
+  for(y=0;y < ldimsz[1];y++)
+	  for(z=0;z < ldimsz[2];z++)
+		  for(x=0;x < ldimsz[0];x++) {
+			  *p_in++ = rand() % 100;
+			  *p_in++ = rand() % 100;
+		  }
 
-    for(y=0;y < ldimsz[1];y++)
-    	  for(z=0;z < ldimsz[2];z++)
-    		  for(x=0;x < ldimsz[0];x++) {
-    			  *p_in++ = rand() % 100;
-    			  *p_in++ = rand() % 100;
-    		  }
+  //Wave input
+  //init_wave(INz,gdims,ldimsz,glob_start_z);
 
+  MPI_Barrier(MPI_COMM_WORLD);
 
+/*  if (rank == 0)
+	  printf("INPUT DATA: \n");			//TODO implementare un confronto con un puntatore in OUTz per vedere
+ 	 	 	 	 	 	 	 	 	 	 	//in che ordine vengono inseriti i dati nell'array (stride-??)
+  print_res(INz,mydims,glob_start_z,mem_order,mydims[2]);
+*/
 
-    // Execute forward transform
-      p3dfft_exec_1Dtrans_double(trans_1,INz,INx);
-      normalize(INx,(long int) ldimsx[0]*ldimsx[1]*ldimsx[2],1.0/((double) mydims[ar_dim]));
+  //---------------------------------------------- FFT Execution -------------------------------------------
+  //Backward z-transform (z->x grid)
+  p3dfft_exec_1Dtrans_double(trans_1,INz,INx);
+  normalize(INx,(long int) ldimsx[0]*ldimsx[1]*ldimsx[2],1.0/((double) mydims[mem_order2[2]]));
 
-
-
-
-
-
-
-
-  // Execute forward transform
+  //Backward x-transform (x->x grid)
   p3dfft_exec_1Dtrans_double(trans_2,INx,CONV);
+  normalize(CONV,(long int) ldimsx[0]*ldimsx[1]*ldimsx[2],1.0/((double) mydims[mem_order[0]]));
 
-/*  if(rank == 0)
-    printf("Results of forward transform: \n");
-  print_res(OUT,mydims2,glob_start2,mem_order2,mydims[ar_dim]);
-  */
-  normalize(CONV,(long int) ldimsx[0]*ldimsx[1]*ldimsx[2],1.0/((double) mydims[ar_dim]));
-
-  // Execute backward transform
+  //Forward x-transform (x->x grid)
   p3dfft_exec_1Dtrans_double(trans_3,CONV,OUTx);
 
-
-
-
-
-
-
-
+  //Forward z-transform (x->z grid)
   p3dfft_exec_1Dtrans_double(trans_4,OUTx,OUTz);
 
-
-
-
-
-  if (rank == 0)
-	  printf("mydims: %d,%d,%d ", mydims[0],mydims[1],mydims[2]);
-
-  mydiff = check_res(OUTz,INz,mydims);
+/*  if (rank == 0)
+            printf("OUTPUT DATA: \n");
+          print_res(OUTz,mydims,glob_start_z,mem_order,mydims[2]);
+*/
+  //---------------------------------------------- Check Results -------------------------------------------
+  mydiff = check_res(INz,OUTz,mydims);
 
   diff = 0.;
   MPI_Reduce(&mydiff,&diff,1,MPI_DOUBLE,MPI_MAX,0,MPI_COMM_WORLD);
-  if(rank == 0) {
-    if(diff > 1.0e-12)
-      printf("Results are incorrect\n");
-    else
-      printf("Results are correct\n");
+  if(rank == 0)
     printf("Max. diff. =%lg\n",diff);
-  }
 
+  //Release memory and clean up P3DFFT++ grids and data
   free(INz); free(OUTz); free(FINz); free(INx); free(CONV); free(OUTx);
-
-  // Clean up grid structures 
-
   p3dfft_free_grid(grid1x);
   p3dfft_free_grid(grid2x);
   p3dfft_free_grid(grid1z);
   p3dfft_free_grid(grid2z);
-
-  // Clean up all P3DFFT++ data
-
   p3dfft_cleanup();
 
   MPI_Finalize();
@@ -391,3 +303,34 @@ void write_buf(double *buf,char *label,int sz[3],int mo[3], int taskid) {
       }
   fclose(fp); 
 }
+
+void init_wave(double *IN,int *gdims1,int *ldims,int *gstart)
+{
+  double *sinx,*siny,*sinz,sinyz,*p;
+  int x,y,z;
+  double twopi = atan(1.0)*8.0;
+
+  sinx = (double *) malloc(sizeof(double)*gdims1[0]);
+  siny = (double *) malloc(sizeof(double)*gdims1[1]);
+  sinz = (double *) malloc(sizeof(double)*gdims1[2]);
+
+   for(z=0;z < ldims[2];z++)
+     sinz[z] = sin((z+gstart[2])*twopi/gdims1[2]);
+   for(y=0;y < ldims[1];y++)
+     siny[y] = sin((y+gstart[1])*twopi/gdims1[1]);
+   for(x=0;x < ldims[0];x++)
+     sinx[x] = sin((x+gstart[0])*twopi/gdims1[0]);
+
+   p = IN;
+   for(z=0;z < ldims[2];z++)
+     for(y=0;y < ldims[1];y++) {
+       sinyz = siny[y]*sinz[z];
+       for(x=0;x < ldims[0];x++) {
+          *p++ = sinx[x]*sinyz;
+          *p++ = 0.0;
+       }
+     }
+
+   free(sinx); free(siny); free(sinz);
+}
+
