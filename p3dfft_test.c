@@ -34,7 +34,6 @@ Author: Mirco Meazzo
 #include <math.h>
 #include <stdio.h>
 
-void init_wave(double *,int[3],int *,int[3]);
 void print_res(double *A,int *mydims,int *gstart, int *mo, int N);
 void normalize(double *,long int,double);
 double check_res(double *A,double *B,int *mydims);
@@ -275,8 +274,8 @@ main(int argc,char **argv)
   diff = 0.;
   MPI_Reduce(&mydiff,&diff,1,MPI_DOUBLE,MPI_MAX,0,p3dfft_comm);
   if(rank == 0){
-    printf("\nMax. diff. =%lg\n",diff);
-    printf("Time spent to setup: %f\nTime spent to do FFT: %f\n\nTotal time: %f\n\n\n", timer_setup, timer_fft, timer_fft+timer_setup);
+    printf("\nMax. diff. = %lg\n",diff);
+    printf("Time spent to setup: %f s\nTime spent to do FFT: %f s\n\nTotal time: %f s\n\n\n", timer_setup, timer_fft, timer_fft+timer_setup);
   }
 
   //-------------------------- Release memory and clean up P3DFFT++ grids and data ------------------------
